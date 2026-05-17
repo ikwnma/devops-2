@@ -1,0 +1,10 @@
+node_modules
+.git
+.gitignore
+.env.local
+.env
+.DS_Store
+dist
+build
+*.md
+.eslintrc.cjs
