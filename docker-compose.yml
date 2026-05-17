@@ -1,0 +1,110 @@
+# ============================================================
+# Docker Compose — Entorno local de desarrollo/pruebas
+# Levanta: MySQL + Backend Ventas + Backend Despachos + Frontend
+#
+# Uso:
+#   1. Crea un archivo .env en esta misma carpeta con las variables
+#   2. Ejecuta: docker compose up --build
+# ============================================================
+
+services:
+
+  # ------------------------------------------------------------
+  # Base de datos MySQL
+  # Usa named volume para persistencia de datos
+  # ------------------------------------------------------------
+  db:
+    image: mysql:8
+    container_name: spa-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql   # named volume → datos persisten al reiniciar
+    healthcheck:
+      test:     ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+    networks:
+      - spa-net
+
+  # ------------------------------------------------------------
+  # Backend Ventas — Spring Boot puerto 8080
+  # Las variables de DB se inyectan desde el .env (nunca hardcodeadas)
+  # ------------------------------------------------------------
+  backend-ventas:
+    build:
+      context: ./back-Ventas_SpringBoot/Springboot-API-REST
+    image: spa-backend-ventas:latest
+    container_name: spa-backend-ventas
+    ports:
+      - "8080:8080"
+    environment:
+      DB_ENDPOINT: ${DB_ENDPOINT}
+      DB_PORT:     ${DB_PORT}
+      DB_NAME:     ${MYSQL_DATABASE} # nombre de la base de datos MYSQL
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy  # espera a que MySQL esté listo
+    networks:
+      - spa-net
+
+  # ------------------------------------------------------------
+  # Backend Despachos — Spring Boot puerto 8081
+  # ------------------------------------------------------------
+  backend-despacho:
+    build:
+      context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+    image: spa-backend-despacho:latest
+    container_name: spa-backend-despacho
+    ports:
+      - "8081:8081"
+    environment:
+      DB_ENDPOINT: ${DB_ENDPOINT}
+      DB_PORT:     ${DB_PORT}
+      DB_NAME:     ${MYSQL_DATABASE} # nombre de la base de datos MYSQL
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - spa-net
+
+  # ------------------------------------------------------------
+  # Frontend — React/Vite servido por Nginx
+  # Nginx hace reverse proxy a los dos backends
+  # ------------------------------------------------------------
+  frontend:
+    build:
+      context: ./front_despacho
+    image: spa-frontend:latest
+    container_name: spa-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-ventas
+      - backend-despacho
+    networks:
+      - spa-net
+
+# ------------------------------------------------------------
+# Named volume para persistencia de MySQL
+# Los datos NO se pierden al hacer docker compose down
+# (solo se eliminan con docker compose down -v)
+# ------------------------------------------------------------
+volumes:
+  mysql_data:
+
+# ------------------------------------------------------------
+# Red interna para comunicación entre contenedores
+# Los contenedores se llaman por nombre de servicio (ej: db, backend-ventas)
+# ------------------------------------------------------------
+networks:
+  spa-net:
+    driver: bridge
