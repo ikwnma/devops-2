@@ -48,6 +48,7 @@ services:
       DB_NAME:     ${MYSQL_DATABASE} # nombre de la base de datos MYSQL
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
       db:
         condition: service_healthy  # espera a que MySQL esté listo
     networks:
