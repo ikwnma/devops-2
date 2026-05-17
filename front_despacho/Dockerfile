@@ -1,24 +1,21 @@
 # ============================================================
-# STAGE 1: Build — Compilar el proyecto React con pnpm
+# STAGE 1: Build — Compilar el proyecto React con npm
 # ============================================================
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Activar pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 # Copiar archivos de dependencias primero (mejor uso de caché de Docker)
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json ./
 
-# Instalar dependencias
-RUN pnpm install --frozen-lockfile
+# Instalar dependencias de forma limpia y segura
+RUN npm install
 
 # Copiar el resto del código fuente
 COPY . .
 
 # Compilar la app para producción
-RUN pnpm run build
+RUN npm run build
 
 # ============================================================
 # STAGE 2: Servidor — Servir con Nginx
