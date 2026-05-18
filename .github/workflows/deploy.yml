@@ -3,7 +3,7 @@ name: CI/CD Deploy a AWS (Arquitectura Bastion)
 on:
   push:
     branches:
-      - feature/prueba-deploy
+      - deploy
 
 jobs:
   build-and-deploy:
