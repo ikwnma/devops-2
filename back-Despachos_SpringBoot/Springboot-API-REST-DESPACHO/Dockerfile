@@ -1,32 +1,23 @@
-# ============================================================
-# STAGE 1: Build — Compilar el proyecto Java con Maven
-# ============================================================
-FROM maven:3.9-eclipse-temurin-21 AS builder
-
+# Multistage
+# Stage 1: compilar JAR
+FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /build
-
-# Copiar el pom.xml primero para aprovechar la caché de dependencias
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
-
-# Copiar el código fuente y compilar (sin ejecutar tests)
 COPY src ./src
-RUN mvn clean package -DskipTests -B
+RUN mvn clean package -DskipTests
 
-# ============================================================
-# STAGE 2: Runtime — Ejecutar el .jar con JRE mínimo
-# ============================================================
-FROM eclipse-temurin:21-jre-alpine
-
+# Stage 2: ejecutar API como usuario no root
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 
-# Copiar solo el .jar generado en Stage 1
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+  && apt-get update && apt-get install -y --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /build/target/*.jar app.jar
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && chown -R appuser:appuser /app /entrypoint.sh
 
-# Usuario no-root para mínimo privilegio
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
-
 EXPOSE 8081
-
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["/entrypoint.sh"]
