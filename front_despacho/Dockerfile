@@ -1,37 +1,24 @@
-# ============================================================
-# STAGE 1: Build — Compilar el proyecto React con npm
-# ============================================================
-FROM node:22-alpine AS builder
-
-WORKDIR /app
-
-# Copiar archivos de dependencias primero (mejor uso de caché de Docker)
-COPY package.json ./
-
-# Instalar dependencias de forma limpia y segura
-RUN npm install
-
-# Copiar el resto del código fuente
+# Multistage
+# Stage 1: build React
+FROM node:20-alpine AS builder
+WORKDIR /build
+COPY package*.json ./
+RUN npm ci
 COPY . .
-
-# Compilar la app para producción
 RUN npm run build
 
-# ============================================================
-# STAGE 2: Servidor — Servir con Nginx
-# ============================================================
-FROM nginx:alpine
-
-# Copiar el build generado en Stage 1
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copiar la configuración personalizada de Nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Asegurar permisos correctos (mínimo privilegio)
-RUN chown -R nginx:nginx /usr/share/nginx/html && \
-    chmod -R 755 /usr/share/nginx/html
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Stage 2: nginx sin privilegios root
+FROM nginxinc/nginx-unprivileged:alpine
+USER root
+RUN apk add --no-cache gettext \
+  && mkdir -p /etc/nginx/templates /etc/nginx/conf.d \
+  && chown -R nginx:nginx /etc/nginx
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh \
+  && chown nginx:nginx /docker-entrypoint.sh
+COPY --from=builder /build/dist /usr/share/nginx/html
+USER nginx
+ENV BACKEND_HOST=backend-ventas
+EXPOSE 8080
+ENTRYPOINT ["/docker-entrypoint.sh"]
