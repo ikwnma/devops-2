@@ -1,4 +1,5 @@
 import React from "react";
+import logo1 from "../../assets/images/logo2.png";
 
 function Footer() {
   return (
@@ -8,7 +9,7 @@ function Footer() {
           <div className="mb-6 md:mb-0">
             <a href="#" className="flex items-center">
               <div className="flex justify-center mb-4">
-                <img src="/vite.svg" alt="Logo ITPCARGO" className="w-20 h-20" />
+                <img src={logo1} alt="Logo" className="w-20 h-20" />
               </div>
             </a>
           </div>
