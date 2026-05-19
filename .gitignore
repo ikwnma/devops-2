@@ -1,55 +1,12 @@
-# ============================================================
-# Archivos de entorno (NUNCA commitear)
-# ============================================================
 .env
-.env.local
-.env.*.local
-
-# ============================================================
-# IDEs
-# ============================================================
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+scripts/deploy.env
+*.pem
 .DS_Store
-*.iml
-
-# ============================================================
-# Node.js / Frontend
-# ============================================================
 node_modules/
-npm-debug.log
-yarn-error.log
 dist/
-build/
-.pnpm-debug.log
-
-# ============================================================
-# Java / Maven / Spring Boot
-# ============================================================
+target/
 *.jar
-*.class
-*.log
-.classpath
-.project
-.settings/
-.factorypath
-
-# ============================================================
-# Docker (compilaciones locales)
-# ============================================================
-.dockerignore
-docker-compose.override.yml
-
-# ============================================================
-# Otros
-# ============================================================
-*.tmp
-*.bak
-.cache/
-**/.terraform/*
+.terraform/
 *.tfstate
-*.tfstate.*
-.terraform.tfstate.lock.info
+*.tfstate.backup
+.terraform.lock.hcl
