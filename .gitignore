@@ -1,0 +1,12 @@
+.env
+scripts/deploy.env
+*.pem
+.DS_Store
+node_modules/
+dist/
+target/
+*.jar
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
