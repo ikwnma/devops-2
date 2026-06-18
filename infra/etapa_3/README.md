@@ -1,13 +1,37 @@
-# EKS Cluster Infrastructure (etapa_3)
+# Infra - Etapa 3: EKS Cluster Infrastructure
 
-Esta carpeta contiene la configuración de Terraform para crear un cluster EKS (Elastic Kubernetes Service) en AWS.
+Este directorio contiene la configuración de Terraform para crear un cluster EKS en AWS.
 
-## Estructura de Archivos
+## Arquitectura
 
-- **main.tf** - Configuración del provider AWS
-- **variables.tf** - Variables de entrada personalizables
-- **vpc.tf** - VPC, subredes, Internet Gateway, NAT Gateway y Security Groups
-- **iam.tf** - Roles IAM necesarios para EKS, nodes y ALB Controller
+- **VPC** con subredes públicas (ALB) y privadas (worker nodes)
+- **EKS Cluster** con nodos gestionados
+- **Roles IAM** para EKS, worker nodes y IRSA (Service Accounts)
+- Logs habilitados en CloudWatch
+
+## Archivos
+
+- `main.tf` - Provider AWS
+- `variables.tf` - Variables personalizables
+- `vpc.tf` - VPC, subredes, Internet Gateway, Security Groups
+- `iam.tf` - Roles y políticas IAM para EKS y nodes
+- `eks.tf` - Cluster EKS y node groups
+- `outputs.tf` - Salidas del cluster
+- `.gitignore` - Archivos a ignorar en Git
+
+## Prerequisitos
+
+- AWS credentials configuradas
+- Terraform >= 1.0
+- kubectl y aws CLI (para operaciones posteriores)
+
+## Uso
+
+```powershell
+terraform init
+terraform plan (opcional)
+terraform apply
+```
 - **eks.tf** - Definición del cluster EKS y Managed Node Group
 - **outputs.tf** - Outputs principales del cluster
 
