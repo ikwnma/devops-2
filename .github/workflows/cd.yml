@@ -1,5 +1,7 @@
-name: Despliegue continuo
+name: Despliegue Continuo (CD) - EKS
 
+# Se activa SOLO cuando se hace push a la rama 'deploy'.
+# Flujo completo: build -> push a ECR -> actualizar deployments en EKS.
 on:
   push:
     branches:
@@ -8,46 +10,77 @@ on:
 env:
   AWS_REGION: us-east-1
   PROJECT_NAME: devops-u2
+  EKS_CLUSTER_NAME: devops-u2-eks
+  K8S_NAMESPACE: apps
 
 jobs:
   build-and-deploy:
+    name: Build, Push y Deploy en EKS
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del código
+      # ----------------------------------------------------------
+      # 1. Obtener el codigo fuente
+      # ----------------------------------------------------------
+      - name: Checkout del codigo
         uses: actions/checkout@v4
 
+      # ----------------------------------------------------------
+      # 2. Autenticar en AWS con credenciales almacenadas en Secrets
+      #    Secrets requeridos:
+      #      - AWS_ACCESS_KEY_ID
+      #      - AWS_SECRET_ACCESS_KEY
+      #      - AWS_SESSION_TOKEN   (requerido por AWS Academy)
+      #      - AWS_ACCOUNT_ID      (numero de cuenta AWS, para construir la URL de ECR)
+      # ----------------------------------------------------------
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Login en ECR
+      # ----------------------------------------------------------
+      # 3. Login en Amazon ECR
+      #    Genera un token temporal que permite hacer docker push
+      #    hacia el registro privado de imagenes de AWS.
+      # ----------------------------------------------------------
+      - name: Login en Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build y push backend ventas
+      # ----------------------------------------------------------
+      # 4. Build y Push - Backend Ventas
+      # ----------------------------------------------------------
+      - name: Build y Push backend ventas
         run: |
           REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-backend-ventas:latest"
+          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-backend:latest"
           docker build --platform linux/amd64 \
             -t "$IMAGE" \
             ./back-Ventas_SpringBoot/Springboot-API-REST
           docker push "$IMAGE"
 
-      - name: Build y push backend despachos
+      # ----------------------------------------------------------
+      # 5. Build y Push - Backend Despachos
+      #    Nota: el ECR de la infra tiene un solo repo "backend".
+      #    Si se desea separar, se crean dos repos en ecr.tf.
+      #    Aqui usamos tags distintos dentro del mismo repo.
+      # ----------------------------------------------------------
+      - name: Build y Push backend despachos
         run: |
           REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-backend-despachos:latest"
+          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-backend:despachos-latest"
           docker build --platform linux/amd64 \
             -t "$IMAGE" \
             ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
           docker push "$IMAGE"
 
-      - name: Build y push frontend
+      # ----------------------------------------------------------
+      # 6. Build y Push - Frontend React/Nginx
+      # ----------------------------------------------------------
+      - name: Build y Push frontend
         run: |
           REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-frontend:latest"
@@ -56,40 +89,52 @@ jobs:
             ./front_despacho
           docker push "$IMAGE"
 
-      - name: Configurar SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-
-      - name: Desplegar backends en EC2 privada (vía bastión)
-        env:
-          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
-          BACKEND_HOST: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
+      # ----------------------------------------------------------
+      # 7. Configurar kubectl para conectarse al cluster EKS
+      #    Descarga y configura el kubeconfig automaticamente
+      #    usando las credenciales AWS ya configuradas.
+      # ----------------------------------------------------------
+      - name: Configurar kubectl para EKS
         run: |
-          PROXY_CMD="ssh -o StrictHostKeyChecking=no -W %h:%p ec2-user@${FRONTEND_HOST}"
-          ssh -o StrictHostKeyChecking=no -o "ProxyCommand=${PROXY_CMD}" \
-            ec2-user@"${BACKEND_HOST}" 'sudo /opt/app/deploy.sh'
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
 
-      - name: Desplegar frontend en EC2 pública
-        env:
-          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
-          BACKEND_HOST: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
+      # ----------------------------------------------------------
+      # 8. Desplegar en EKS - Forzar rollout de los deployments
+      #    kubectl rollout restart hace que Kubernetes descargue
+      #    la imagen :latest actualizada desde ECR y reemplace
+      #    los pods existentes con un RollingUpdate (sin downtime).
+      # ----------------------------------------------------------
+      - name: Desplegar backend en EKS
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@"${FRONTEND_HOST}" \
-            "sudo sed -i 's/^BACKEND_HOST=.*/BACKEND_HOST=${BACKEND_HOST}/' /opt/app/.env && \
-             sudo sed -i 's/^BACKEND_HOST_DESPACHOS=.*/BACKEND_HOST_DESPACHOS=${BACKEND_HOST}/' /opt/app/.env && \
-             sudo /opt/app/deploy.sh"
+          kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-backend \
+            -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-backend \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=120s
 
-      - name: Verificar frontend
-        env:
-          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
+      - name: Desplegar frontend en EKS
         run: |
-          for i in $(seq 1 30); do
-            if curl -sf "http://${FRONTEND_HOST}/" >/dev/null; then
-              echo "Frontend OK en http://${FRONTEND_HOST}/"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Frontend no respondió a tiempo"
-          exit 1
+          kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-frontend \
+            -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-frontend \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=120s
+
+      # ----------------------------------------------------------
+      # 9. Verificar que los pods quedaron Running
+      # ----------------------------------------------------------
+      - name: Verificar estado de los pods
+        run: |
+          echo "=== Pods en namespace ${{ env.K8S_NAMESPACE }} ==="
+          kubectl get pods -n ${{ env.K8S_NAMESPACE }}
+          echo ""
+          echo "=== Servicios ==="
+          kubectl get services -n ${{ env.K8S_NAMESPACE }}
+          echo ""
+          echo "=== Ingress (URL publica del ALB) ==="
+          kubectl get ingress -n ${{ env.K8S_NAMESPACE }}
+
+
+          
