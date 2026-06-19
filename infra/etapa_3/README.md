@@ -1,119 +1,66 @@
 # Infra - Etapa 3: EKS Cluster Infrastructure
 
-Este directorio contiene la configuración de Terraform para crear un cluster EKS en AWS.
+Este directorio contiene la configuración de Terraform para crear un cluster EKS en AWS. Los manifiestos de Kubernetes se encuentran en la carpeta `k8s/`.
 
 ## Arquitectura
 
+- **AWS EKS** cluster con nodos gestionados
 - **VPC** con subredes públicas (ALB) y privadas (worker nodes)
-- **EKS Cluster** con nodos gestionados
-- **Roles IAM** para EKS, worker nodes y IRSA (Service Accounts)
+- **Roles IAM** para EKS, worker nodes, ALB Controller e IRSA
+- **ECR repositories** para Frontend y Backend
 - Logs habilitados en CloudWatch
 
-## Archivos
+## Estructura de Archivos
 
+**En `infra/etapa_3/`:**
 - `main.tf` - Provider AWS
-- `variables.tf` - Variables personalizables
-- `vpc.tf` - VPC, subredes, Internet Gateway, Security Groups
-- `iam.tf` - Roles y políticas IAM para EKS y nodes
+- `variables.tf` - Variables de AWS y EKS
+- `outputs.tf` - Outputs del cluster, VPC, ECR
+- `vpc.tf` - VPC, subredes, Internet Gateway, NAT, Security Groups
+- `iam.tf` - Roles IAM para EKS y nodes
 - `eks.tf` - Cluster EKS y node groups
-- `outputs.tf` - Salidas del cluster
-- `.gitignore` - Archivos a ignorar en Git
+- `ecr.tf` - Repositories ECR para Frontend y Backend
+
+**En `k8s/` (Kubernetes manifiestos):**
+- `main.tf` - Providers de Kubernetes y Helm
+- `variables.tf` - Variables para deployments
+- `outputs.tf` - Outputs de servicios y ALB
+- `deployments.tf` - Frontend y Backend deployments
+- `services.tf` - Services y ALB Ingress
+- `autoscaling.tf` - HPA (Horizontal Pod Autoscaler)
+- `secrets.tf` - Secrets para DB y ECR
 
 ## Prerequisitos
 
 - AWS credentials configuradas
 - Terraform >= 1.0
-- kubectl y aws CLI (para operaciones posteriores)
+- kubectl instalado
+- aws CLI configurado
 
 ## Uso
 
 ```powershell
-terraform init
-terraform plan (opcional)
-terraform apply
-```
-- **eks.tf** - Definición del cluster EKS y Managed Node Group
-- **outputs.tf** - Outputs principales del cluster
-
-## Requisitos
-
-- Terraform >= 1.0
-- AWS CLI configurado con credenciales válidas
-- AWS Academy o Educate account
-- kubectl instalado (para conectarse al cluster)
-
-## Estructura de Red
-
-```
-VPC: 10.1.0.0/16
-├── Public Subnets (para ALB)
-│   ├── 10.1.1.0/24 (us-east-1a)
-│   └── 10.1.2.0/24 (us-east-1b)
-├── Private Subnets (para nodos worker)
-│   ├── 10.1.10.0/24 (us-east-1a)
-│   └── 10.1.11.0/24 (us-east-1b)
-├── NAT Gateway (en subnet pública)
-├── Internet Gateway
-└── Route Tables (público y privado)
-```
-
-## Variables Personalizables
-
-En **variables.tf** puedes ajustar:
-
-```hcl
-aws_region          = "us-east-1"     # Región AWS
-project_name        = "devops-u2"     # Nombre del proyecto
-kubernetes_version  = "1.29"          # Versión de Kubernetes
-node_count          = 2               # Cantidad de nodos worker
-node_instance_type  = "t3.medium"     # Tipo de instancia EC2
-vpc_cidr            = "10.1.0.0/16"   # CIDR del VPC
-enable_nat_gateway  = true            # Habilitar NAT Gateway
-```
-
-## Pasos para Desplegar
-
-### 1. Inicializar Terraform
-
-```bash
+# 1. Desplegar infraestructura EKS
 cd infra/etapa_3
 terraform init
+terraform plan
+terraform apply
+
+# 2. Configurar kubectl
+terraform output configure_kubectl  # Copiar y ejecutar el comando
+
+# 3. Desplegar servicios de Kubernetes
+cd ../../k8s
+terraform init
+terraform plan -var-file=../infra/etapa_3/terraform.tfvars
+terraform apply
 ```
 
-### 2. Planificar el despliegue
+## Notas
 
-```bash
-terraform plan -out=tfplan
-```
-
-### 3. Aplicar la configuración
-
-```bash
-terraform apply tfplan
-```
-
-El despliegue tarda aproximadamente **10-15 minutos**.
-
-### 4. Configurar kubectl
-
-Una vez que Terraform termine, ejecuta:
-
-```bash
-aws eks update-kubeconfig --region us-east-1 --name devops-u2-eks
-```
-
-### 5. Verificar la conexión
-
-```bash
-kubectl get nodes
-kubectl get pods -A
-```
-
-## Componentes Creados
-
-### Infraestructura de Red
-- ✅ VPC con 2 subredes públicas y 2 privadas
-- ✅ Internet Gateway
+- Guarda outputs de `etapa_3` para usar como variables en `k8s/`
+- El ALB DNS aparecerá 2-3 minutos después de aplicar
+- Ver [k8s/README.md](../../k8s/README.md) para detalles de deployments
 - ✅ NAT Gateway (para tráfico saliente desde nodos privados)
 - ✅ Route Tables y asociaciones
 - ✅ Security Groups para cluster y nodos
