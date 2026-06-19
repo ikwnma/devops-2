@@ -1,5 +1,8 @@
-name: Integracion continua
+name: Integracion Continua (CI)
 
+# Se activa en push o PR hacia main/develop
+# Solo valida que las imagenes Docker compilen correctamente.
+# NO sube imagenes, NO despliega nada.
 on:
   push:
     branches:
@@ -12,26 +15,35 @@ on:
 
 jobs:
   build:
+    name: Build Docker Images
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del código
+      # 1. Descarga el codigo del repositorio
+      - name: Checkout del codigo
         uses: actions/checkout@v4
 
+      # 2. Construye la imagen del backend de Ventas
       - name: Build backend ventas
         run: |
           docker build \
-            -t ventas-backend:ci \
+            --platform linux/amd64 \
+            -t devops-u2-backend-ventas:ci \
             ./back-Ventas_SpringBoot/Springboot-API-REST
 
+      # 3. Construye la imagen del backend de Despachos
       - name: Build backend despachos
         run: |
           docker build \
-            -t despachos-backend:ci \
+            --platform linux/amd64 \
+            -t devops-u2-backend-despachos:ci \
             ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
 
+      # 4. Construye la imagen del frontend React/Nginx
       - name: Build frontend
         run: |
           docker build \
-            -t despacho-frontend:ci \
+            --platform linux/amd64 \
+            -t devops-u2-frontend:ci \
             ./front_despacho
+
