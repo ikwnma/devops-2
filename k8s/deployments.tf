@@ -125,6 +125,119 @@ resource "kubernetes_deployment" "backend" {
 }
 
 ############################
+# Backend Despachos Deployment
+############################
+
+resource "kubernetes_deployment" "backend_despachos" {
+  metadata {
+    name      = "${var.project_name}-backend-despachos"
+    namespace = kubernetes_namespace.apps.metadata[0].name
+    labels = {
+      app = "backend-despachos"
+    }
+  }
+
+  spec {
+    replicas = var.backend_replicas
+
+    selector {
+      match_labels = {
+        app = "backend-despachos"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "backend-despachos"
+        }
+      }
+
+      spec {
+        image_pull_secrets {
+          name = kubernetes_secret.ecr_credentials.metadata[0].name
+        }
+
+        container {
+          name  = "backend-despachos"
+          image = "${aws_ecr_repository.backend.repository_url}:despachos-latest"
+
+          port {
+            container_port = var.backend_port
+          }
+
+          env {
+            name  = "SPRING_DATASOURCE_URL"
+            value = var.db_url
+          }
+
+          env {
+            name  = "SPRING_DATASOURCE_USERNAME"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.db_credentials.metadata[0].name
+                key  = "username"
+              }
+            }
+          }
+
+          env {
+            name  = "SPRING_DATASOURCE_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.db_credentials.metadata[0].name
+                key  = "password"
+              }
+            }
+          }
+
+          resources {
+            requests = {
+              cpu    = var.backend_cpu_request
+              memory = var.backend_memory_request
+            }
+            limits = {
+              cpu    = var.backend_cpu_limit
+              memory = var.backend_memory_limit
+            }
+          }
+
+          liveness_probe {
+            http_get {
+              path   = "/actuator/health"
+              port   = var.backend_port
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            http_get {
+              path   = "/actuator/health"
+              port   = var.backend_port
+            }
+            initial_delay_seconds = 10
+            period_seconds        = 5
+          }
+        }
+
+        restart_policy = "Always"
+      }
+    }
+
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {
+        max_surge       = 1
+        max_unavailable = 0
+      }
+    }
+  }
+
+  depends_on = [kubernetes_namespace.apps, kubernetes_secret.ecr_credentials]
+}
+
+############################
 # Frontend Deployment
 ############################
 

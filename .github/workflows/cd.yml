@@ -114,6 +114,14 @@ jobs:
             -n ${{ env.K8S_NAMESPACE }} \
             --timeout=120s
 
+      - name: Desplegar backend despachos en EKS
+        run: |
+          kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-backend-despachos \
+            -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-backend-despachos \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=120s
+
       - name: Desplegar frontend en EKS
         run: |
           kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-frontend \
