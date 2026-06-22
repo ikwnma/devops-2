@@ -1,35 +1,53 @@
 variable "aws_region" {
-  description = "AWS region"
+  description = "Region de AWS donde se desplegará la infraestructura."
+  type        = string
   default     = "us-east-1"
 }
 
 variable "project_name" {
-  description = "Project name"
+  description = "Nombre base del proyecto."
+  type        = string
   default     = "devops-u2"
 }
 
-variable "kubernetes_version" {
-  description = "Kubernetes version"
-  default     = "1.29"
-}
-
-variable "node_count" {
-  description = "Number of worker nodes"
-  default     = 2
-}
-
-variable "node_instance_type" {
-  description = "EC2 instance type for worker nodes"
-  default     = "t3.medium"
+variable "cluster_name" {
+  description = "Nombre del cluster EKS."
+  type        = string
+  default     = "devops-u2-eks"
 }
 
 variable "vpc_cidr" {
-  description = "VPC CIDR block"
-  default     = "10.1.0.0/16"
+  description = "CIDR principal de la VPC."
+  type        = string
+  default     = "10.0.0.0/16"
 }
 
-variable "enable_nat_gateway" {
-  description = "Enable NAT Gateway for private subnets"
-  default     = true
+variable "public_subnet_cidrs" {
+  description = "CIDR de las subredes publicas."
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
+variable "node_instance_types" {
+  description = "Tipos de instancia para los nodos del cluster EKS."
+  type        = list(string)
+  default     = ["t3.large"]
+}
+
+variable "node_desired_size" {
+  description = "Cantidad deseada de nodos."
+  type        = number
+  default     = 2
+}
+
+variable "node_min_size" {
+  description = "Cantidad minima de nodos."
+  type        = number
+  default     = 1
+}
+
+variable "node_max_size" {
+  description = "Cantidad maxima de nodos."
+  type        = number
+  default     = 3
+}
