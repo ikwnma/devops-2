@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: despachos-app
+data:
+  DB_ENDPOINT: mysql-service
+  DB_PORT: "3306"
+  DB_NAME: devops_db
+  BACKEND_VENTAS_PORT: "8080"
+  BACKEND_DESPACHOS_PORT: "8081"
