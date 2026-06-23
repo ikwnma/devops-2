@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: app-config
-  namespace: apps
+  namespace: despachos-app
 data:
   DB_ENDPOINT: mysql-service
   DB_PORT: "3306"

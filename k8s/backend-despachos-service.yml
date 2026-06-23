@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend-despachos-service
-  namespace: apps
+  namespace: despachos-app
 spec:
   type: ClusterIP
   selector:

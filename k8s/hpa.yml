@@ -2,7 +2,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: escalado-servicio-ventas
-  namespace: apps
+  namespace: despachos-app
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -22,7 +22,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: escalado-servicio-despachos
-  namespace: apps
+  namespace: despachos-app
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -42,7 +42,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: escalado-cliente-web
-  namespace: apps
+  namespace: despachos-app
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

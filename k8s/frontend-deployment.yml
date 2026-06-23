@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend-despacho
-  namespace: apps
+  namespace: despachos-app
 spec:
   replicas: 2
   selector:

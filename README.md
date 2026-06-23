@@ -243,4 +243,4 @@ Todos los recursos corren en el namespace `apps`.
 - **`envsubst`** en el pipeline para inyectar las URLs de imagen en los manifiestos sin modificar los archivos fuente.
 - **HPA** configurado en los 3 servicios para escalar automáticamente bajo carga.
 - **Dockerfiles multi-stage** con usuario no root en todos los servicios.
-- **Health checks** en los backends; MySQL espera estar listo antes de que arranquen.
+- **Health checks** en los backends; MySQL espera estar listo antes de que arranquen
