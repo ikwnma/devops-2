@@ -8,10 +8,10 @@ Infraestructura y aplicación desplegadas en **AWS EKS** usando **Terraform**, *
 
 ## Equipo
 
-| Integrante | Rol principal | Contacto |
-|------------|---------------|----------|
-| Felipe Ardiles | Infraestructura AWS, Docker, CI/CD, Terraform | Repositorio principal |
-| Renato Herrera | Desarrollo backend, apoyo en despliegue y documentación | idkraes17@gmail.com |
+| Integrante | Rol principal |
+|------------|---------------|
+| Aracelly Zenteno | Infraestructura AWS, Kubernetes, CI/CD |
+| Matias Jara | Desarrollo backend, Docker, Terraform |
 
 ---
 
@@ -83,13 +83,55 @@ devops-2/
 
 ---
 
+## Arquitectura del despliegue
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        AWS Cloud                            │
+│                                                             │
+│   ┌─────────────────── VPC 10.0.0.0/16 ─────────────────┐  │
+│   │                                                       │  │
+│   │   Subred pública AZ-1        Subred pública AZ-2     │  │
+│   │   10.0.1.0/24                10.0.2.0/24             │  │
+│   │         │                          │                  │  │
+│   │         └──────────┬───────────────┘                  │  │
+│   │                    │                                   │  │
+│   │            ┌───────▼────────┐                         │  │
+│   │            │  EKS Cluster   │  Kubernetes 1.32        │  │
+│   │            │  Node Group    │  SPOT t3.large (1-3)    │  │
+│   │            │                │                         │  │
+│   │            │  namespace: apps                         │  │
+│   │            │  ┌───────────────────────────────────┐   │  │
+│   │            │  │ Pod: frontend-despacho (x2)       │   │  │
+│   │            │  │ Pod: backend-ventas (x2)          │   │  │
+│   │            │  │ Pod: backend-despachos (x2)       │   │  │
+│   │            │  │ Pod: mysql (x1)                   │   │  │
+│   │            │  └───────────────────────────────────┘   │  │
+│   │            └───────┬────────┘                         │  │
+│   │                    │                                   │  │
+│   └────────────────────┼───────────────────────────────── ┘  │
+│                        │                                      │
+│   Amazon ECR           │  LoadBalancer (ELB)                  │
+│   ┌──────────────┐     │                                      │
+│   │ frontend-    │     └──────────────────────────────────┐   │
+│   │ despacho     │                                        │   │
+│   │ backend-     │◄── GitHub Actions (build & push)       │   │
+│   │ ventas       │                                        │   │
+│   │ backend-     │                                        │   │
+│   │ despachos    │                                        │   │
+│   └──────────────┘                                        │   │
+└───────────────────────────────────────────────────────────┘   │
+                                                                 │
+Usuario (Internet) ──────────────────────────────────────────── ┘
+```
+
 ## Flujo de datos
 
 ```
 Usuario (Internet)
         │  HTTP :80
         ▼
-LoadBalancer (AWS ELB — frontend-despacho-service)
+AWS ELB (frontend-despacho-service — LoadBalancer)
         │
         ▼
 Pod Frontend — nginx (namespace: apps)
@@ -101,9 +143,13 @@ Pod Frontend — nginx (namespace: apps)
                               Pod Backend (Spring Boot)
                                       │  JDBC :3306
                                       ▼
-                              Pod MySQL (mysql-service)
+                              Pod MySQL (mysql-service — ClusterIP)
 
-GitHub Actions → ECR → EKS (kubectl apply)
+GitHub Actions (rama deploy)
+        │
+        ├─ build imágenes Docker
+        ├─ push a Amazon ECR
+        └─ kubectl apply → EKS (namespace: apps)
 ```
 
 ---
