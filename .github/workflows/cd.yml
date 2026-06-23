@@ -1,148 +1,220 @@
-name: Despliegue Continuo (CD) - EKS
+name: Despliegue en AWS con EKS
 
-# Se activa SOLO cuando se hace push a la rama 'deploy'.
-# Flujo completo: build -> push a ECR -> actualizar deployments en EKS.
 on:
   push:
     branches:
       - deploy
 
-env:
-  AWS_REGION: us-east-1
-  PROJECT_NAME: devops-u2
-  EKS_CLUSTER_NAME: devops-u2-eks
-  K8S_NAMESPACE: apps
-
 jobs:
-  build-and-deploy:
-    name: Build, Push y Deploy en EKS
+  deploy:
     runs-on: ubuntu-latest
 
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE }}
+      ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+      ECR_VENTAS_REPOSITORY: ${{ vars.ECR_VENTAS_REPOSITORY }}
+      ECR_DESPACHOS_REPOSITORY: ${{ vars.ECR_DESPACHOS_REPOSITORY }}
+      IMAGE_TAG: ${{ github.sha }}
+
     steps:
-      # ----------------------------------------------------------
-      # 1. Obtener el codigo fuente
-      # ----------------------------------------------------------
-      - name: Checkout del codigo
+      - name: Descargar codigo del repositorio
         uses: actions/checkout@v4
 
-      # ----------------------------------------------------------
-      # 2. Autenticar en AWS con credenciales almacenadas en Secrets
-      #    Secrets requeridos:
-      #      - AWS_ACCESS_KEY_ID
-      #      - AWS_SECRET_ACCESS_KEY
-      #      - AWS_SESSION_TOKEN   (requerido por AWS Academy)
-      #      - AWS_ACCOUNT_ID      (numero de cuenta AWS, para construir la URL de ECR)
-      # ----------------------------------------------------------
-      - name: Configurar credenciales AWS
+      - name: Autenticar en AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      # ----------------------------------------------------------
-      # 3. Login en Amazon ECR
-      #    Genera un token temporal que permite hacer docker push
-      #    hacia el registro privado de imagenes de AWS.
-      # ----------------------------------------------------------
-      - name: Login en Amazon ECR
+      - name: Instalar herramienta de sustitucion de variables
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Autenticar en el registro de imagenes ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # ----------------------------------------------------------
-      # 4. Build y Push - Backend Ventas
-      # ----------------------------------------------------------
-      - name: Build y Push backend ventas
+      - name: Armar rutas completas de los repositorios ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-backend:latest"
-          docker build --platform linux/amd64 \
-            -t "$IMAGE" \
-            ./back-Ventas_SpringBoot/Springboot-API-REST
-          docker push "$IMAGE"
+          echo "FRONTEND_DESPACHO_ECR=${ECR_REGISTRY}/${ECR_FRONTEND_REPOSITORY}" >> "$GITHUB_ENV"
+          echo "BACKEND_VENTAS_ECR=${ECR_REGISTRY}/${ECR_VENTAS_REPOSITORY}" >> "$GITHUB_ENV"
+          echo "BACKEND_DESPACHOS_ECR=${ECR_REGISTRY}/${ECR_DESPACHOS_REPOSITORY}" >> "$GITHUB_ENV"
 
-      # ----------------------------------------------------------
-      # 5. Build y Push - Backend Despachos
-      #    Nota: el ECR de la infra tiene un solo repo "backend".
-      #    Si se desea separar, se crean dos repos en ecr.tf.
-      #    Aqui usamos tags distintos dentro del mismo repo.
-      # ----------------------------------------------------------
-      - name: Build y Push backend despachos
+      - name: Preparar el motor de construccion de imagenes
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir imagen del cliente web
         run: |
-          REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-backend:despachos-latest"
-          docker build --platform linux/amd64 \
-            -t "$IMAGE" \
-            ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
-          docker push "$IMAGE"
+          docker buildx build \
+            --platform linux/amd64 \
+            -t "$FRONTEND_DESPACHO_ECR:$IMAGE_TAG" \
+            ./front_despacho \
+            --load
 
-      # ----------------------------------------------------------
-      # 6. Build y Push - Frontend React/Nginx
-      # ----------------------------------------------------------
-      - name: Build y Push frontend
+      - name: Publicar imagen del cliente web en ECR
         run: |
-          REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          IMAGE="${REGISTRY}/${{ env.PROJECT_NAME }}-frontend:latest"
-          docker build --platform linux/amd64 \
-            -t "$IMAGE" \
-            ./front_despacho
-          docker push "$IMAGE"
+          docker push "$FRONTEND_DESPACHO_ECR:$IMAGE_TAG"
 
-      # ----------------------------------------------------------
-      # 7. Configurar kubectl para conectarse al cluster EKS
-      #    Descarga y configura el kubeconfig automaticamente
-      #    usando las credenciales AWS ya configuradas.
-      # ----------------------------------------------------------
-      - name: Configurar kubectl para EKS
+      - name: Construir imagen del servicio de ventas
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -t "$BACKEND_VENTAS_ECR:$IMAGE_TAG" \
+            ./back-Ventas_SpringBoot/Springboot-API-REST \
+            --load
+
+      - name: Publicar imagen del servicio de ventas en ECR
+        run: |
+          docker push "$BACKEND_VENTAS_ECR:$IMAGE_TAG"
+
+      - name: Construir imagen del servicio de despachos
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -t "$BACKEND_DESPACHOS_ECR:$IMAGE_TAG" \
+            ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO \
+            --load
+
+      - name: Publicar imagen del servicio de despachos en ECR
+        run: |
+          docker push "$BACKEND_DESPACHOS_ECR:$IMAGE_TAG"
+
+      - name: Instalar cliente de Kubernetes
+        uses: azure/setup-kubectl@v4
+
+      - name: Apuntar kubectl al cluster EKS
         run: |
           aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }}
+            --region "$AWS_REGION" \
+            --name "$CLUSTER_NAME"
 
-      # ----------------------------------------------------------
-      # 8. Desplegar en EKS - Forzar rollout de los deployments
-      #    kubectl rollout restart hace que Kubernetes descargue
-      #    la imagen :latest actualizada desde ECR y reemplace
-      #    los pods existentes con un RollingUpdate (sin downtime).
-      # ----------------------------------------------------------
-      - name: Desplegar backend en EKS
+      - name: Desplegar servidor de metricas en el cluster
         run: |
-          kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-backend \
-            -n ${{ env.K8S_NAMESPACE }}
-          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-backend \
-            -n ${{ env.K8S_NAMESPACE }} \
-            --timeout=120s
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml --validate=false --request-timeout=5m
+          kubectl rollout status deployment/metrics-server -n kube-system --timeout=300s
 
-      - name: Desplegar backend despachos en EKS
+      - name: Inyectar imagenes en los manifiestos de Kubernetes
         run: |
-          kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-backend-despachos \
-            -n ${{ env.K8S_NAMESPACE }}
-          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-backend-despachos \
-            -n ${{ env.K8S_NAMESPACE }} \
-            --timeout=120s
+          mkdir -p k8s-build
 
-      - name: Desplegar frontend en EKS
+          export FRONTEND_DESPACHO_IMAGE="$FRONTEND_DESPACHO_ECR:$IMAGE_TAG"
+          export BACKEND_VENTAS_IMAGE="$BACKEND_VENTAS_ECR:$IMAGE_TAG"
+          export BACKEND_DESPACHOS_IMAGE="$BACKEND_DESPACHOS_ECR:$IMAGE_TAG"
+
+          envsubst < k8s/frontend-deployment.yml > k8s-build/frontend-deployment.yml
+          envsubst < k8s/backend-ventas-deployment.yml > k8s-build/backend-ventas-deployment.yml
+          envsubst < k8s/backend-despachos-deployment.yml > k8s-build/backend-despachos-deployment.yml
+
+          cp k8s/namespace.yml k8s-build/
+          cp k8s/configmap.yml k8s-build/
+          cp k8s/secrets.yml k8s-build/
+          cp k8s/mysql-deployment.yml k8s-build/
+          cp k8s/mysql-service.yml k8s-build/
+          cp k8s/backend-ventas-service.yml k8s-build/
+          cp k8s/backend-despachos-service.yml k8s-build/
+          cp k8s/frontend-service.yml k8s-build/
+          cp k8s/hpa.yml k8s-build/
+
+      - name: Crear namespace de la aplicacion
         run: |
-          kubectl rollout restart deployment/${{ env.PROJECT_NAME }}-frontend \
-            -n ${{ env.K8S_NAMESPACE }}
-          kubectl rollout status deployment/${{ env.PROJECT_NAME }}-frontend \
-            -n ${{ env.K8S_NAMESPACE }} \
-            --timeout=120s
+          kubectl apply -f k8s-build/namespace.yml --validate=false --request-timeout=5m
 
-      # ----------------------------------------------------------
-      # 9. Verificar que los pods quedaron Running
-      # ----------------------------------------------------------
-      - name: Verificar estado de los pods
+      - name: Aplicar configuracion y credenciales
         run: |
-          echo "=== Pods en namespace ${{ env.K8S_NAMESPACE }} ==="
-          kubectl get pods -n ${{ env.K8S_NAMESPACE }}
-          echo ""
-          echo "=== Servicios ==="
-          kubectl get services -n ${{ env.K8S_NAMESPACE }}
-          echo ""
-          echo "=== Ingress (URL publica del ALB) ==="
-          kubectl get ingress -n ${{ env.K8S_NAMESPACE }}
+          kubectl apply -f k8s-build/configmap.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+          kubectl apply -f k8s-build/secrets.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
 
+      - name: Levantar base de datos MySQL
+        run: |
+          kubectl apply -f k8s-build/mysql-deployment.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+          kubectl apply -f k8s-build/mysql-service.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
 
-          
+      - name: Levantar servicios backend
+        run: |
+          kubectl apply -f k8s-build/backend-ventas-deployment.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+          kubectl apply -f k8s-build/backend-ventas-service.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+          kubectl apply -f k8s-build/backend-despachos-deployment.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+          kubectl apply -f k8s-build/backend-despachos-service.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+
+      - name: Levantar cliente web
+        run: |
+          kubectl apply -f k8s-build/frontend-deployment.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+          kubectl apply -f k8s-build/frontend-service.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+
+      - name: Activar reglas de autoescalado
+        run: |
+          kubectl apply -f k8s-build/hpa.yml -n "$K8S_NAMESPACE" --validate=false --request-timeout=5m
+
+      - name: Confirmar que MySQL esta operativo
+        run: |
+          kubectl rollout status deployment/mysql -n "$K8S_NAMESPACE" --timeout=300s
+
+      - name: Confirmar que el servicio de ventas esta operativo
+        run: |
+          kubectl rollout status deployment/backend-ventas -n "$K8S_NAMESPACE" --timeout=300s
+
+      - name: Confirmar que el servicio de despachos esta operativo
+        run: |
+          kubectl rollout status deployment/backend-despachos -n "$K8S_NAMESPACE" --timeout=300s
+
+      - name: Confirmar que el cliente web esta operativo
+        run: |
+          kubectl rollout status deployment/frontend-despacho -n "$K8S_NAMESPACE" --timeout=300s
+
+      - name: Listar pods y servicios activos
+        run: |
+          kubectl get pods -n "$K8S_NAMESPACE" -o wide
+          kubectl get svc -n "$K8S_NAMESPACE"
+          kubectl get hpa -n "$K8S_NAMESPACE"
+          kubectl top nodes || true
+          kubectl top pods -n "$K8S_NAMESPACE" || true
+
+      - name: Recuperar URL publica del cliente web
+        run: |
+          FRONTEND_SERVICE="frontend-despacho-service"
+
+          echo "Esperando URL publica del LoadBalancer..."
+
+          for i in {1..60}; do
+            FRONTEND_HOST=$(kubectl get svc "$FRONTEND_SERVICE" -n "$K8S_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            FRONTEND_IP=$(kubectl get svc "$FRONTEND_SERVICE" -n "$K8S_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+
+            if [ -n "$FRONTEND_HOST" ]; then
+              FRONTEND_URL="http://$FRONTEND_HOST"
+              break
+            fi
+
+            if [ -n "$FRONTEND_IP" ]; then
+              FRONTEND_URL="http://$FRONTEND_IP"
+              break
+            fi
+
+            echo "LoadBalancer aun pendiente... intento $i/60"
+            sleep 10
+          done
+
+          if [ -z "${FRONTEND_URL:-}" ]; then
+            echo "No se pudo obtener la URL del frontend."
+            echo "Estado actual del servicio:"
+            kubectl get svc "$FRONTEND_SERVICE" -n "$K8S_NAMESPACE" -o wide
+            exit 1
+          fi
+
+          echo "URL del Frontend: $FRONTEND_URL"
+          echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
+
+          echo "## Frontend desplegado correctamente" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### URL del Frontend" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Abrir Frontend]($FRONTEND_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Servicio Kubernetes: \`$FRONTEND_SERVICE\`" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::notice title=URL Frontend::$FRONTEND_URL"
